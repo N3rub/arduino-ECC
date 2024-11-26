@@ -6,7 +6,6 @@
 
 /* CALIBRATION CONSTANTS */
 #define CALIBRATION_PULLUP_PIN 2
-#define CALIBRATION_PIN 2
 
 /* SENSOR CONSTANTS */
 #define SENSOR_OUTPUT_PIN A0
@@ -23,41 +22,67 @@
 #define LINE_VOLTAJE 110.0f
 
 /* MACROS */
-#define ADC( x ) ( (x) / ANALOG_RESOLUTION )
-#define MeasureVoltaje ADC ( analogRead ( SENSOR_OUTPUT_PIN ) * SENSOR_VCC )
+#define ADC(x) ( (x) / ANALOG_RESOLUTION )
+#define Mod(x) ( (x) > 0 ? (x) : (x)*-1 )
 
-void Interrupt_Calibrate();
+void Calibrate();
 
 float MeasureCurrent ();
+float MeasureVoltage ();
 void SendData ( float );
 
 volatile float voe = SENSOR_IDEAL_V_OFFSET; // Electrical offset voltage V_{OE}, deviation from Vcc/2
+volatile float i_offset = 0.0f;
+
 EthernetServer server ( 80 );
 
 void setup () {
-    pinMode ( CALIBRATION_PULLUP_PIN, INPUT_PULLUP );
+    pinMode( CALIBRATION_PULLUP_PIN, INPUT_PULLUP );
     byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-    IPAddress ip ( 192, 168, 1, 200 );
-    // attachInterrupt( digitalPinToInterrupt( CALIBRATION_PULLUP_PIN ), Interrupt_Calibrate, FALLING )
-	Ethernet.begin ( mac , ip );
-    server.begin ();
-    Serial.begin ( 8000 );
+    IPAddress ip( 192, 168, 1, 200 );
+    attachInterrupt( digitalPinToInterrupt( CALIBRATION_PULLUP_PIN ), Calibrate, FALLING );
+	Ethernet.begin( mac , ip );
+    server.begin();
+    Serial.begin( 9600 );
+    Calibrate();
 }
 
 void loop () {
-	float current = MeasureCurrent ();
-	Serial.println ( current );
-    SendData ( current );
+	float current = MeasureCurrent();
+    Serial.println ( current );
 
-	delay ( 1000 );
+    SendData( current );
+
+	delay( 1000 );
+}
+
+float MeasureSensorVoltage ()
+{
+     return ADC( analogRead ( SENSOR_OUTPUT_PIN ) * SENSOR_VCC );
 }
 
 float MeasureCurrent ()
 {
 	float measuredI = 0;
 	for ( uint i=0; i < NUM_SAMPLES; i++ )
-		measuredI += ( MeasureVoltaje - voe ) / SENSOR_MV_I_SENSIBILITY;
+		measuredI += ( MeasureSensorVoltage() - voe ) / SENSOR_MV_I_SENSIBILITY;
+    delay( 2 );
 	return measuredI / NUM_SAMPLES;
+}
+
+
+void Calibrate()
+{
+    Serial.println ( "Calibrating" );
+    voe = i_offset = 0;
+
+    for ( uint i=0; i < NUM_SAMPLES; i++ )
+        voe += MeasureSensorVoltage();
+    voe /= NUM_SAMPLES;
+    delay(2);
+
+    Serial.print ( "Electrical Offset Voltaje: " );
+    Serial.println ( voe );
 }
 
 void SendData ( float data ) {
@@ -91,12 +116,4 @@ void SendData ( float data ) {
 	delay ( 1 );
 	client.stop ();
     }
-}
-
-void Interrupt_Calibrate()
-{
-    voe = 0;
-    for ( uint i=0; i < NUM_SAMPLES; i++ )
-        voe += ADC ( CALIBRATION_PIN );
-    voe /= NUM_SAMPLES;
 }
