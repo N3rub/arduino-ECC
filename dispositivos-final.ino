@@ -5,9 +5,8 @@
 #define uint unsigned int
 
 /* CALIBRATION CONSTANTS */
-#define CALIBRATION_PULLUP_PIN = 2;
-#define CALIBRATION_PIN = 2;
-
+#define CALIBRATION_PULLUP_PIN 2
+#define CALIBRATION_PIN 2
 
 /* SENSOR CONSTANTS */
 #define SENSOR_OUTPUT_PIN A0
@@ -16,7 +15,7 @@
 #define SENSOR_MV_I_SENSIBILITY 0.100f
 
 /* MEASUREMENT CONSTANTS */
-#define ANALOG_RESOLUTION 1023.0f
+#define ANALOG_RESOLUTION 1023
 #define NUM_SAMPLES 100
 
 /* OTHER CONSTANTS */
@@ -24,21 +23,23 @@
 #define LINE_VOLTAJE 110.0f
 
 /* MACROS */
-#define ADC ( x ) ( (x) / ANALOG_RESOLUTION )
+#define ADC( x ) ( (x) / ANALOG_RESOLUTION )
 #define MeasureVoltaje ADC ( analogRead ( SENSOR_OUTPUT_PIN ) * SENSOR_VCC )
 
 void Interrupt_Calibrate();
 
 float MeasureCurrent ();
-void SendData ( auto );
+void SendData ( float );
 
 volatile float voe = SENSOR_IDEAL_V_OFFSET; // Electrical offset voltage V_{OE}, deviation from Vcc/2
+EthernetServer server ( 80 );
 
 void setup () {
-    pinmode ( CALIBRATION_PULLUP_PIN, INPUT_PULLUP );
-
+    pinMode ( CALIBRATION_PULLUP_PIN, INPUT_PULLUP );
+    byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
     IPAddress ip ( 192, 168, 1, 200 );
-	Ethernet.begin ( { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED } , ip );
+    // attachInterrupt( digitalPinToInterrupt( CALIBRATION_PULLUP_PIN ), Interrupt_Calibrate, FALLING )
+	Ethernet.begin ( mac , ip );
     server.begin ();
     Serial.begin ( 8000 );
 }
@@ -59,7 +60,7 @@ float MeasureCurrent ()
 	return measuredI / NUM_SAMPLES;
 }
 
-void SendData ( auto data ) {
+void SendData ( float data ) {
 	EthernetClient client = server.available ();
     if ( client ) {
         bool currentLineIsBlank = true;
@@ -89,6 +90,7 @@ void SendData ( auto data ) {
         }
 	delay ( 1 );
 	client.stop ();
+    }
 }
 
 void Interrupt_Calibrate()
