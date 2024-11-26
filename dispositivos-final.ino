@@ -4,10 +4,15 @@
 /* TIPOS */
 #define uint unsigned int
 
+/* CALIBRATION CONSTANTS */
+#define CALIBRATION_PULLUP_PIN = 2;
+#define CALIBRATION_PIN = 2;
+
+
 /* SENSOR CONSTANTS */
 #define SENSOR_OUTPUT_PIN A0
 #define SENSOR_VCC 5.0f
-#define SENSOR_V_OFFSET 2.5f
+#define SENSOR_IDEAL_V_OFFSET 2.5f
 #define SENSOR_MV_I_SENSIBILITY 0.100f
 
 /* MEASUREMENT CONSTANTS */
@@ -19,26 +24,77 @@
 #define LINE_VOLTAJE 110.0f
 
 /* MACROS */
-#define MeasureVoltaje ( analogRead(SENSOR_OUTPUT_PIN) * SENSOR_VCC / ANALOG_RESOLUTION )
+#define ADC ( x ) ( (x) / ANALOG_RESOLUTION )
+#define MeasureVoltaje ADC ( analogRead ( SENSOR_OUTPUT_PIN ) * SENSOR_VCC )
 
-const int ledPin = 13;
+void Interrupt_Calibrate();
 
-void setup() {
-	pinMode(ledPin, OUTPUT);
+float MeasureCurrent ();
+void SendData ( auto );
+
+volatile float voe = SENSOR_IDEAL_V_OFFSET; // Electrical offset voltage V_{OE}, deviation from Vcc/2
+
+void setup () {
+    pinmode ( CALIBRATION_PULLUP_PIN, INPUT_PULLUP );
+
+    IPAddress ip ( 192, 168, 1, 200 );
+	Ethernet.begin ( { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED } , ip );
+    server.begin ();
+    Serial.begin ( 8000 );
 }
 
-void loop() {
+void loop () {
+	float current = MeasureCurrent ();
+	Serial.println ( current );
+    SendData ( current );
 
-	digitalWrite(ledPin, HIGH);
-	delay(1000);
-	digitalWrite(ledPin, LOW);
-	delay(1000);
+	delay ( 1000 );
 }
 
-float MeasureCurrent()
+float MeasureCurrent ()
 {
 	float measuredI = 0;
 	for ( uint i=0; i < NUM_SAMPLES; i++ )
-		measuredI += ( MeasureVoltaje - SENSOR_V_OFFSET ) / SENSOR_MV_I_SENSIBILITY;
+		measuredI += ( MeasureVoltaje - voe ) / SENSOR_MV_I_SENSIBILITY;
 	return measuredI / NUM_SAMPLES;
+}
+
+void SendData ( auto data ) {
+	EthernetClient client = server.available ();
+    if ( client ) {
+        bool currentLineIsBlank = true;
+        while ( client.connected () ) {
+            if ( client.available () ) {
+                char c = client.read ();
+                // Si ha terminado la petición del cliente
+                if ( c == '\n' && currentLineIsBlank ) {
+                    // Enviar cabecera web
+                    client.println ( "HTTP/1.1 200 OK" );
+                    client.println ( "Content-Type: application/json" );
+                    client.println ();
+
+                    // Crear objeto JSON
+                    client.print ( "{\"current\": " );
+                    client.print ( data );
+                    client.println ( "}" );
+
+                    break;
+                }
+                if ( c == '\n' ) {
+                    currentLineIsBlank = true;
+                } else if ( c != '\r' ) {
+                    currentLineIsBlank = false;
+                }
+            }
+        }
+	delay ( 1 );
+	client.stop ();
+}
+
+void Interrupt_Calibrate()
+{
+    voe = 0;
+    for ( uint i=0; i < NUM_SAMPLES; i++ )
+        voe += ADC ( CALIBRATION_PIN );
+    voe /= NUM_SAMPLES;
 }
